@@ -1,23 +1,32 @@
-name: "The name of your action here"
-description: "Provide a description here"
-author: "Your name or organization here"
+name: "Prune Registry"
+description: "Will prune old tags from a Docker registry"
+author: "Model W"
 
-# Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
-    icon: "heart"
-    color: "red"
+    icon: "trash-2"
+    color: "orange"
 
-# Define your inputs here.
 inputs:
-    milliseconds:
-        description: "Your input description here"
+    domain:
+        description:
+            "Domain name of your registry. Prefix with http:// if not HTTPS"
         required: true
-        default: "1000"
+    user:
+        description: "User name for authentication"
+        required: true
+        default: ""
+    password:
+        description: "Password for authentication"
+        required: true
+        default: ""
+    image:
+        description: "Image that you are pruning"
+        required: true
+    regex:
+        description: "Regular expression to match the tags you want"
+        required: true
 
-# Define your outputs here.
-outputs:
-    time:
-        description: "Your output description here"
+outputs: {}
 
 runs:
     using: node20

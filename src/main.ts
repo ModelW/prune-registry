@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
-import { wait } from "./wait";
+import { prune, PruneOptions } from "./prune";
+import { getInput, setFailed } from "@actions/core";
 
 /**
  * The main function for the action.
@@ -7,20 +8,24 @@ import { wait } from "./wait";
  */
 export async function run(): Promise<void> {
     try {
-        const ms: string = core.getInput("milliseconds");
+        const options: PruneOptions = {
+            domain: getInput('domain'),
+            user: getInput('user'),
+            password: getInput('password'),
+            image: getInput('image'),
+            regex: new RegExp(getInput('regex'))
+        }
 
-        // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
-        core.debug(`Waiting ${ms} milliseconds ...`);
+        core.debug(`Parsed input: ${JSON.stringify(options)}`);
 
-        // Log the current timestamp, wait, then log the new timestamp
-        core.debug(new Date().toTimeString());
-        await wait(parseInt(ms, 10));
-        core.debug(new Date().toTimeString());
-
-        // Set outputs for other workflow steps to use
-        core.setOutput("time", new Date().toTimeString());
+        await prune(options);
     } catch (error) {
-        // Fail the workflow run if an error occurs
-        if (error instanceof Error) core.setFailed(error.message);
+        if (error instanceof Error) {
+            setFailed(`Error: ${error.message}`)
+        } else {
+            setFailed("Unknown error")
+        }
+
+        throw error;
     }
 }
