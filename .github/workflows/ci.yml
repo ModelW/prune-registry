@@ -18,47 +18,85 @@ jobs:
 
         steps:
             - name: Checkout
-              id: checkout
               uses: actions/checkout@v4
 
             - name: Setup Node.js
-              id: setup-node
               uses: actions/setup-node@v4
               with:
                   node-version-file: .node-version
                   cache: npm
 
             - name: Install Dependencies
-              id: npm-ci
               run: npm ci
 
             - name: Check Format
-              id: npm-format-check
               run: npm run format:check
 
             - name: Lint
-              id: npm-lint
               run: npm run lint
 
             - name: Test
-              id: npm-ci-test
               run: npm run ci-test
 
     test-action:
         name: GitHub Actions Test
         runs-on: ubuntu-latest
 
+        services:
+            registry:
+                image: registry:2
+                ports:
+                    - 5000:5000
+                env:
+                    REGISTRY_STORAGE_DELETE_ENABLED: "true"
+                    REGISTRY_AUTH: htpasswd
+                    REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+                    REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+                volumes:
+                    - ./test-registry/auth:/auth
+
         steps:
             - name: Checkout
-              id: checkout
               uses: actions/checkout@v4
 
-            - name: Test Local Action
-              id: test-action
+            - name: Setup test registry
+              run: |
+                  docker login localhost:5000 -u testuser -p testpass
+
+                  # Build and push v1.0.0
+                  docker build -t localhost:5000/test-image:v1.0.0 -f- . <<EOF
+                  FROM scratch
+                  COPY README.md /
+                  EOF
+                  docker push localhost:5000/test-image:v1.0.0
+                  docker tag localhost:5000/test-image:v1.0.0 localhost:5000/test-image:latest
+                  docker push localhost:5000/test-image:latest
+
+                  # Build and push v2.0.0
+                  docker build -t localhost:5000/test-image:v2.0.0 -f- . <<EOF
+                  FROM scratch
+                  COPY LICENSE /
+                  EOF
+                  docker push localhost:5000/test-image:v2.0.0
+                  docker tag localhost:5000/test-image:v2.0.0 localhost:5000/test-image:latest
+                  docker push localhost:5000/test-image:latest
+
+            - name: Run action
               uses: ./
               with:
-                  milliseconds: 2000
+                  domain: localhost:5000
+                  user: testuser
+                  password: testpass
+                  image: test-image
+                  regex: 'latest|v2\.0\.0'
 
-            - name: Print Output
-              id: output
-              run: echo "${{ steps.test-action.outputs.time }}"
+            - name: Verify results
+              run: |
+                  tags=$(curl -s -u testuser:testpass http://localhost:5000/v2/test-image/tags/list | jq -r '.tags[]')
+                  if [[ $tags == *"v2.0.0"* ]] && [[ $tags == *"latest"* ]] && [[ $tags != *"v1.0.0"* ]]; then
+                    echo "Tags pruned successfully"
+                  else
+                    echo "Tag pruning failed"
+                    echo "Remaining tags: $tags"
+                    exit 1
+                  fi
