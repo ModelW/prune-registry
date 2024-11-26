@@ -11,6 +11,7 @@ Use it like:
       domain: your-registry.com
       username: user
       password: pwd
+      image: some/image
       regex: "^staging|production$"
 ```
 
