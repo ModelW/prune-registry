@@ -80,7 +80,25 @@ jobs:
                     -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
                     registry:2
 
-                  docker login localhost:5000 -u testuser -p testpass
+                  # Wait for registry to be ready
+                  for i in {1..30}; do
+                    if curl -s http://localhost:5000/v2/ > /dev/null; then
+                      echo "Registry is up"
+                      break
+                    fi
+                    echo "Waiting for registry... (attempt $i)"
+                    sleep 1
+                  done
+
+                  # Attempt Docker login
+                  for i in {1..5}; do
+                    if docker login localhost:5000 -u testuser -p testpass; then
+                      echo "Login successful"
+                      break
+                    fi
+                    echo "Login failed, retrying in 5 seconds... (attempt $i)"
+                    sleep 5
+                  done
 
                   # Build and push v1.0.0
                   docker build -t localhost:5000/test-image:v1.0.0 -f- . <<EOF
