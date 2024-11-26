@@ -121,7 +121,7 @@ jobs:
             - name: Run action
               uses: ./
               with:
-                  domain: localhost:5000
+                  domain: http://localhost:5000
                   user: testuser
                   password: testpass
                   image: test-image
