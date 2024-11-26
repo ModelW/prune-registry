@@ -61,25 +61,25 @@ jobs:
         name: GitHub Actions Test
         runs-on: ubuntu-latest
 
-        services:
-            registry:
-                image: registry:2
-                ports:
-                    - 5000:5000
-                env:
-                    REGISTRY_STORAGE_DELETE_ENABLED: "true"
-                    REGISTRY_AUTH: htpasswd
-                    REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
-                    REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
-                volumes:
-                    - ./test-registry/auth:/auth
-
         steps:
             - name: Checkout
               uses: actions/checkout@v4
 
             - name: Setup test registry
               run: |
+                  mkdir -p test-registry/auth
+                  docker run --entrypoint htpasswd httpd:2 -Bbn testuser testpass > test-registry/auth/htpasswd
+
+                  docker run -d \
+                    -p 5000:5000 \
+                    --name registry \
+                    -v $(pwd)/test-registry/auth:/auth \
+                    -e REGISTRY_STORAGE_DELETE_ENABLED=true \
+                    -e REGISTRY_AUTH=htpasswd \
+                    -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
+                    -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+                    registry:2
+
                   docker login localhost:5000 -u testuser -p testpass
 
                   # Build and push v1.0.0
