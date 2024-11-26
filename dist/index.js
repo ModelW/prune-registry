@@ -25716,16 +25716,12 @@ async function run() {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.prune = prune;
 const core_1 = __nccwpck_require__(9999);
-const WAIT_PERIOD_MS = 50;
-async function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-async function fetchWithAuth(url, user, password) {
+async function fetchWithAuth(url, user, password, accept = undefined) {
     const authHeader = `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
     return fetch(url, {
         headers: {
             Authorization: authHeader,
-            Accept: "application/vnd.docker.distribution.manifest.v2+json",
+            ...(accept ? { Accept: accept } : {}),
         },
     });
 }
@@ -25754,11 +25750,8 @@ function normalizeOptions(options) {
 async function makeTagMap(options) {
     const { domain, user, password, image } = options;
     const tagMap = { tagToRef: {}, refToTags: {} };
-    let requestCount = 0;
-    async function fetchJson(url) {
-        await sleep(WAIT_PERIOD_MS * requestCount);
-        requestCount += 1;
-        const response = await fetchWithAuth(url, user, password);
+    async function fetchJson(url, accept = undefined) {
+        const response = await fetchWithAuth(url, user, password, accept);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -25766,16 +25759,20 @@ async function makeTagMap(options) {
     }
     const { tags } = await fetchJson(`${domain}/v2/${image}/tags/list`);
     (0, core_1.debug)(`Found tags: ${JSON.stringify(tags).slice(1, -1)}`);
-    requestCount = 0;
     for (const tag of tags) {
-        const manifest = await fetchJson(`${domain}/v2/${image}/manifests/${tag}`);
-        const imageRef = manifest.config.digest;
-        (0, core_1.debug)(`Found tag ${tag} has ref ${imageRef}`);
-        tagMap.tagToRef[tag] = imageRef;
-        tagMap.refToTags[imageRef] = [
-            ...(tagMap.refToTags[imageRef] || []),
-            tag,
-        ];
+        const manifest = await fetchJson(`${domain}/v2/${image}/manifests/${tag}`, "application/vnd.oci.image.index.v1+json");
+        manifest.manifests.forEach((entry) => {
+            if (entry.platform.architecture !== "amd64") {
+                return;
+            }
+            const imageRef = entry.digest;
+            (0, core_1.debug)(`Found tag ${tag} has ref ${imageRef}`);
+            tagMap.tagToRef[tag] = imageRef;
+            tagMap.refToTags[imageRef] = [
+                ...(tagMap.refToTags[imageRef] || []),
+                tag,
+            ];
+        });
     }
     return tagMap;
 }
@@ -25796,35 +25793,31 @@ function makeKillList(map, regex) {
 }
 async function deleteTags(options, killList) {
     const { domain, user, password, image } = options;
-    let requestCount = 0;
     for (const tag of killList) {
-        await sleep(WAIT_PERIOD_MS * requestCount);
-        requestCount += 1;
         const url = `${domain}/v2/${image}/manifests/${tag}`;
         // First, we need to get the digest of the manifest
-        const getResponse = await fetchWithAuth(url, user, password);
+        const getResponse = await fetchWithAuth(url, user, password, "application/vnd.oci.image.index.v1+json");
         if (!getResponse.ok) {
             (0, core_1.debug)(`Failed to get manifest for tag ${tag}: ${getResponse.status} ${getResponse.statusText}`);
             continue;
         }
-        const digest = getResponse.headers.get("Docker-Content-Digest");
-        if (!digest) {
-            (0, core_1.debug)(`No digest found for tag ${tag}`);
-            continue;
-        }
-        // Now we can delete the manifest using the digest
-        const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
-        const deleteResponse = await fetch(deleteUrl, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
-            },
-        });
-        if (deleteResponse.ok) {
-            (0, core_1.debug)(`Successfully deleted tag ${tag}`);
-        }
-        else {
-            (0, core_1.debug)(`Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`);
+        const manifest = (await getResponse.json());
+        for (const entry of manifest.manifests) {
+            const digest = entry.digest;
+            // Now we can delete the manifest using the digest
+            const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
+            const deleteResponse = await fetch(deleteUrl, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
+                },
+            });
+            if (deleteResponse.ok) {
+                (0, core_1.debug)(`Successfully deleted tag ${tag}`);
+            }
+            else {
+                (0, core_1.debug)(`Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`);
+            }
         }
     }
 }

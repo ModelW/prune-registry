@@ -27,28 +27,29 @@ interface RegistryTagList {
     tags: string[];
 }
 
-interface RegistryManifest {
-    config: {
-        digest: string;
+interface RegistryManifestEntry {
+    digest: string;
+    platform: {
+        architecture: string;
+        os: string;
     };
 }
 
-const WAIT_PERIOD_MS = 50;
-
-async function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+interface RegistryManifest {
+    manifests: RegistryManifestEntry[];
 }
 
 async function fetchWithAuth(
     url: string,
     user: string,
-    password: string
+    password: string,
+    accept: string | undefined = undefined
 ): Promise<Response> {
     const authHeader = `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
     return fetch(url, {
         headers: {
             Authorization: authHeader,
-            Accept: "application/vnd.docker.distribution.manifest.v2+json",
+            ...(accept ? { Accept: accept } : {}),
         },
     });
 }
@@ -81,13 +82,12 @@ async function makeTagMap(
 ): Promise<TagMap> {
     const { domain, user, password, image } = options;
     const tagMap: TagMap = { tagToRef: {}, refToTags: {} };
-    let requestCount = 0;
 
-    async function fetchJson<T>(url: string): Promise<T> {
-        await sleep(WAIT_PERIOD_MS * requestCount);
-        requestCount += 1;
-
-        const response = await fetchWithAuth(url, user, password);
+    async function fetchJson<T>(
+        url: string,
+        accept: string | undefined = undefined
+    ): Promise<T> {
+        const response = await fetchWithAuth(url, user, password, accept);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -99,20 +99,27 @@ async function makeTagMap(
         `${domain}/v2/${image}/tags/list`
     );
     debug(`Found tags: ${JSON.stringify(tags).slice(1, -1)}`);
-    requestCount = 0;
 
     for (const tag of tags) {
         const manifest = await fetchJson<RegistryManifest>(
-            `${domain}/v2/${image}/manifests/${tag}`
+            `${domain}/v2/${image}/manifests/${tag}`,
+            "application/vnd.oci.image.index.v1+json"
         );
-        const imageRef = manifest.config.digest;
-        debug(`Found tag ${tag} has ref ${imageRef}`);
 
-        tagMap.tagToRef[tag] = imageRef;
-        tagMap.refToTags[imageRef] = [
-            ...(tagMap.refToTags[imageRef] || []),
-            tag,
-        ];
+        manifest.manifests.forEach((entry) => {
+            if (entry.platform.architecture !== "amd64") {
+                return;
+            }
+
+            const imageRef = entry.digest;
+            debug(`Found tag ${tag} has ref ${imageRef}`);
+
+            tagMap.tagToRef[tag] = imageRef;
+            tagMap.refToTags[imageRef] = [
+                ...(tagMap.refToTags[imageRef] || []),
+                tag,
+            ];
+        });
     }
 
     return tagMap;
@@ -141,44 +148,45 @@ async function deleteTags(
     killList: string[]
 ): Promise<undefined> {
     const { domain, user, password, image } = options;
-    let requestCount = 0;
 
     for (const tag of killList) {
-        await sleep(WAIT_PERIOD_MS * requestCount);
-        requestCount += 1;
-
         const url = `${domain}/v2/${image}/manifests/${tag}`;
 
         // First, we need to get the digest of the manifest
-        const getResponse = await fetchWithAuth(url, user, password);
+        const getResponse = await fetchWithAuth(
+            url,
+            user,
+            password,
+            "application/vnd.oci.image.index.v1+json"
+        );
         if (!getResponse.ok) {
             debug(
                 `Failed to get manifest for tag ${tag}: ${getResponse.status} ${getResponse.statusText}`
             );
             continue;
         }
-        const digest = getResponse.headers.get("Docker-Content-Digest");
 
-        if (!digest) {
-            debug(`No digest found for tag ${tag}`);
-            continue;
-        }
+        const manifest = (await getResponse.json()) as RegistryManifest;
 
-        // Now we can delete the manifest using the digest
-        const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
-        const deleteResponse = await fetch(deleteUrl, {
-            method: "DELETE",
-            headers: {
-                Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
-            },
-        });
+        for (const entry of manifest.manifests) {
+            const digest = entry.digest;
 
-        if (deleteResponse.ok) {
-            debug(`Successfully deleted tag ${tag}`);
-        } else {
-            debug(
-                `Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`
-            );
+            // Now we can delete the manifest using the digest
+            const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
+            const deleteResponse = await fetch(deleteUrl, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
+                },
+            });
+
+            if (deleteResponse.ok) {
+                debug(`Successfully deleted tag ${tag}`);
+            } else {
+                debug(
+                    `Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`
+                );
+            }
         }
     }
 }
