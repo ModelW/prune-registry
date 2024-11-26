@@ -25685,11 +25685,11 @@ const core_1 = __nccwpck_require__(9999);
 async function run() {
     try {
         const options = {
-            domain: (0, core_1.getInput)('domain'),
-            user: (0, core_1.getInput)('user'),
-            password: (0, core_1.getInput)('password'),
-            image: (0, core_1.getInput)('image'),
-            regex: new RegExp((0, core_1.getInput)('regex'))
+            domain: (0, core_1.getInput)("domain"),
+            user: (0, core_1.getInput)("user"),
+            password: (0, core_1.getInput)("password"),
+            image: (0, core_1.getInput)("image"),
+            regex: new RegExp((0, core_1.getInput)("regex")),
         };
         core.debug(`Parsed input: ${JSON.stringify(options)}`);
         await (0, prune_1.prune)(options);

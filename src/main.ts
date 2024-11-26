@@ -9,21 +9,21 @@ import { getInput, setFailed } from "@actions/core";
 export async function run(): Promise<void> {
     try {
         const options: PruneOptions = {
-            domain: getInput('domain'),
-            user: getInput('user'),
-            password: getInput('password'),
-            image: getInput('image'),
-            regex: new RegExp(getInput('regex'))
-        }
+            domain: getInput("domain"),
+            user: getInput("user"),
+            password: getInput("password"),
+            image: getInput("image"),
+            regex: new RegExp(getInput("regex")),
+        };
 
         core.debug(`Parsed input: ${JSON.stringify(options)}`);
 
         await prune(options);
     } catch (error) {
         if (error instanceof Error) {
-            setFailed(`Error: ${error.message}`)
+            setFailed(`Error: ${error.message}`);
         } else {
-            setFailed("Unknown error")
+            setFailed("Unknown error");
         }
 
         throw error;
