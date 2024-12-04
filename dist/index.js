@@ -25801,23 +25801,19 @@ async function deleteTags(options, killList) {
             (0, core_1.debug)(`Failed to get manifest for tag ${tag}: ${getResponse.status} ${getResponse.statusText}`);
             continue;
         }
-        const manifest = (await getResponse.json());
-        for (const entry of manifest.manifests) {
-            const digest = entry.digest;
-            // Now we can delete the manifest using the digest
-            const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
-            const deleteResponse = await fetch(deleteUrl, {
-                method: "DELETE",
-                headers: {
-                    Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
-                },
-            });
-            if (deleteResponse.ok) {
-                (0, core_1.debug)(`Successfully deleted tag ${tag}`);
-            }
-            else {
-                (0, core_1.debug)(`Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`);
-            }
+        const digest = getResponse.headers.get("docker-content-digest");
+        const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
+        const deleteResponse = await fetch(deleteUrl, {
+            method: "DELETE",
+            headers: {
+                Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
+            },
+        });
+        if (deleteResponse.ok) {
+            (0, core_1.debug)(`Successfully deleted tag ${tag}`);
+        }
+        else {
+            (0, core_1.debug)(`Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`);
         }
     }
 }

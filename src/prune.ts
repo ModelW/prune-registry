@@ -166,27 +166,21 @@ async function deleteTags(
             continue;
         }
 
-        const manifest = (await getResponse.json()) as RegistryManifest;
+        const digest = getResponse.headers.get("docker-content-digest");
+        const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
+        const deleteResponse = await fetch(deleteUrl, {
+            method: "DELETE",
+            headers: {
+                Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
+            },
+        });
 
-        for (const entry of manifest.manifests) {
-            const digest = entry.digest;
-
-            // Now we can delete the manifest using the digest
-            const deleteUrl = `${domain}/v2/${image}/manifests/${digest}`;
-            const deleteResponse = await fetch(deleteUrl, {
-                method: "DELETE",
-                headers: {
-                    Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
-                },
-            });
-
-            if (deleteResponse.ok) {
-                debug(`Successfully deleted tag ${tag}`);
-            } else {
-                debug(
-                    `Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`
-                );
-            }
+        if (deleteResponse.ok) {
+            debug(`Successfully deleted tag ${tag}`);
+        } else {
+            debug(
+                `Failed to delete tag ${tag}: ${deleteResponse.status} ${deleteResponse.statusText}`
+            );
         }
     }
 }
